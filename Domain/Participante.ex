@@ -1,4 +1,4 @@
-defmodule Participantes do
+defmodule Participante do
 
   defstruct [:id, :nombre, :email]
 
