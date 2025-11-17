@@ -1,27 +1,39 @@
-# Script de ejecución para la aplicación Hackathon
+# run.exs
 # Ejecutar con: elixir run.exs
 
-# Cargar todos los módulos necesarios
-Code.require_file("Domain/value_objects.ex", __DIR__)
-Code.require_file("Domain/Mensaje.ex", __DIR__)
-Code.require_file("Domain/Participante.ex", __DIR__)
-Code.require_file("Domain/Equipo.ex", __DIR__)
-Code.require_file("Domain/Chat/ServidorChat.ex", __DIR__)
-Code.require_file("Domain/Chat.ex", __DIR__)
+IO.puts("🔄 Cargando módulos del sistema...")
 
-# Cargar adaptadores
-Code.require_file("adapters/persistence/repo_behavior.ex", __DIR__)
-Code.require_file("adapters/persistence/ets_repo.ex", __DIR__)
-Code.require_file("adapters/persistence/memory_repo.ex", __DIR__)
-Code.require_file("adapters/cli/command_handler.ex", __DIR__)
-Code.require_file("adapters/cli/cli_interface.ex", __DIR__)
+# ============================================================================
+# CARGAR MÓDULOS DEL DOMAIN
+# ============================================================================
+Code.require_file("Domain/participante.ex", __DIR__)
+Code.require_file("Domain/equipo.ex", __DIR__)
+Code.require_file("Domain/proyecto.ex", __DIR__)
+Code.require_file("Domain/mensaje.ex", __DIR__)
+Code.require_file("Domain/mentor.ex", __DIR__)
 
-# Cargar servicios
-Code.require_file("services/team_service.ex", __DIR__)
-Code.require_file("services/chat_service.ex", __DIR__)
+# ============================================================================
+# CARGAR ADAPTADORES - PERSISTENCE
+# ============================================================================
+Code.require_file("Adapters/Persistence/ets_repo.ex", __DIR__)
 
-# Cargar el main
-Code.require_file("main.ex", __DIR__)
+# ============================================================================
+# CARGAR SERVICIOS
+# ============================================================================
+Code.require_file("Services/equipo_service.ex", __DIR__)
+Code.require_file("Services/proyecto_service.ex", __DIR__)
+Code.require_file("Services/chat_service.ex", __DIR__)
+Code.require_file("Services/mentor_service.ex", __DIR__)
 
-# Iniciar la aplicación
-Main.start()
+# ============================================================================
+# CARGAR ADAPTADORES - CLI
+# ============================================================================
+Code.require_file("Adapters/CLI/command_handler.ex", __DIR__)
+Code.require_file("Adapters/CLI/interface.ex", __DIR__)
+
+IO.puts("✅ Módulos cargados correctamente\n")
+
+# ============================================================================
+# INICIAR LA APLICACIÓN
+# ============================================================================
+Adapters.CLI.Interface.start()
