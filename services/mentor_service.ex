@@ -1,14 +1,17 @@
-# Services/mentor_service.ex
 defmodule Services.MentorService do
   @moduledoc """
-  Servicio de aplicación para gestión de mentores
+  Servicio de aplicación encargado de la gestión de mentores.
   """
 
   alias Domain.Mentor
   alias Adapters.Persistence.ETSRepo
   alias Services.{EquipoService, ProyectoService}
 
-  @doc "Registra un nuevo mentor"
+  # REGISTRO Y CONSULTA DE MENTORES
+
+  @doc """
+  Registra un nuevo mentor en el sistema.
+  """
   @spec registrar_mentor(String.t(), String.t(), list(String.t())) :: {:ok, Mentor.t()}
   def registrar_mentor(nombre, email, especialidades) do
     mentor = Mentor.nuevo(nombre, email, especialidades)
@@ -16,27 +19,40 @@ defmodule Services.MentorService do
     {:ok, mentor}
   end
 
-  @doc "Lista todos los mentores"
+  @doc """
+  Lista todos los mentores registrados.
+  """
   @spec listar_mentores() :: list(Mentor.t())
   def listar_mentores do
     ETSRepo.listar_mentores()
   end
 
-  @doc "Lista solo mentores disponibles"
+  @doc """
+  Lista únicamente los mentores que están disponibles (`mentor.disponible == true`).
+  """
   @spec listar_disponibles() :: list(Mentor.t())
   def listar_disponibles do
     ETSRepo.listar_mentores()
     |> Enum.filter(& &1.disponible)
   end
 
-  @doc "Obtiene un mentor por ID"
+  @doc """
+  Obtiene un mentor por su ID único.
+  """
   @spec obtener_mentor(String.t()) :: Mentor.t() | nil
   def obtener_mentor(id) do
     ETSRepo.obtener_mentor(id)
   end
 
-  @doc "Registra una consulta de un equipo a un mentor"
-  @spec registrar_consulta(String.t(), String.t(), String.t()) :: {:ok, Mentor.t()} | {:error, atom()}
+  # ---------------------------------------------------------------------------
+  # CONSULTAS DE EQUIPOS A MENTORES
+  # ---------------------------------------------------------------------------
+
+  @doc """
+  Registra una consulta enviada por un equipo hacia un mentor.
+  """
+  @spec registrar_consulta(String.t(), String.t(), String.t()) ::
+          {:ok, Mentor.t()} | {:error, atom()}
   def registrar_consulta(mentor_id, nombre_equipo, mensaje) do
     with %Mentor{} = mentor <- ETSRepo.obtener_mentor(mentor_id),
          info_equipo when not is_nil(info_equipo) <- EquipoService.info_completa(nombre_equipo),
@@ -56,8 +72,11 @@ defmodule Services.MentorService do
     end
   end
 
-  @doc "Responde una consulta"
-  @spec responder_consulta(String.t(), String.t(), String.t()) :: {:ok, Mentor.t()} | {:error, atom()}
+  @doc """
+  Permite que un mentor responda una consulta específica.
+  """
+  @spec responder_consulta(String.t(), String.t(), String.t()) ::
+          {:ok, Mentor.t()} | {:error, atom()}
   def responder_consulta(mentor_id, consulta_id, respuesta) do
     case ETSRepo.obtener_mentor(mentor_id) do
       nil ->
@@ -75,13 +94,20 @@ defmodule Services.MentorService do
     end
   end
 
-  @doc "Agrega feedback a un proyecto"
-  @spec agregar_feedback(String.t(), String.t(), String.t(), integer() | nil) :: {:ok, Mentor.t()} | {:error, atom()}
+  # FEEDBACK A PROYECTOS
+
+  @doc """
+  Envía feedback de un mentor hacia el proyecto de un equipo.
+  """
+  @spec agregar_feedback(String.t(), String.t(), String.t(), integer() | nil) ::
+          {:ok, Mentor.t()} | {:error, atom()}
   def agregar_feedback(mentor_id, nombre_equipo, mensaje, calificacion \\ nil) do
     with %Mentor{} = mentor <- ETSRepo.obtener_mentor(mentor_id),
          proyecto when not is_nil(proyecto) <- ProyectoService.obtener_por_equipo(nombre_equipo) do
 
-      mentor_actualizado = Mentor.agregar_feedback(mentor, proyecto.id, mensaje, calificacion)
+      mentor_actualizado =
+        Mentor.agregar_feedback(mentor, proyecto.id, mensaje, calificacion)
+
       ETSRepo.guardar_mentor(mentor_actualizado)
       {:ok, mentor_actualizado}
     else
@@ -89,19 +115,22 @@ defmodule Services.MentorService do
     end
   end
 
-  @doc "Obtiene consultas pendientes de un mentor"
+  # CONSULTAS Y FEEDBACK
+
+  @doc """
+  Obtiene la lista de consultas pendientes (sin responder) de un mentor.
+  """
   @spec consultas_pendientes(String.t()) :: list(map()) | {:error, atom()}
   def consultas_pendientes(mentor_id) do
     case ETSRepo.obtener_mentor(mentor_id) do
-      nil ->
-        {:error, :mentor_no_encontrado}
-
-      mentor ->
-        Mentor.consultas_pendientes(mentor)
+      nil -> {:error, :mentor_no_encontrado}
+      mentor -> Mentor.consultas_pendientes(mentor)
     end
   end
 
-  @doc "Obtiene feedback de un mentor para un proyecto"
+  @doc """
+  Obtiene el feedback emitido por un mentor para un proyecto dado.
+  """
   @spec feedback_proyecto(String.t(), String.t()) :: list(map()) | {:error, atom()}
   def feedback_proyecto(mentor_id, nombre_equipo) do
     with %Mentor{} = mentor <- ETSRepo.obtener_mentor(mentor_id),
@@ -113,8 +142,12 @@ defmodule Services.MentorService do
     end
   end
 
-  @doc "Cambia la disponibilidad de un mentor"
-  @spec cambiar_disponibilidad(String.t(), boolean()) :: {:ok, Mentor.t()} | {:error, atom()}
+  # DISPONIBILIDAD
+  @doc """
+  Cambia el estado de disponibilidad de un mentor (disponible/no disponible).
+  """
+  @spec cambiar_disponibilidad(String.t(), boolean()) ::
+          {:ok, Mentor.t()} | {:error, atom()}
   def cambiar_disponibilidad(mentor_id, disponible) do
     case ETSRepo.obtener_mentor(mentor_id) do
       nil ->
