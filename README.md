@@ -84,7 +84,7 @@ sudo apt-get install elixir
 ### 1. Clonar o descargar el proyecto
 
 ```bash
-git clone <url-del-repositorio>
+git clone <https://github.com/Zero-1929/Hackaton.git>
 cd hackathon_app
 ```
 
