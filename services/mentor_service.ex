@@ -1,148 +1,129 @@
+# Services/mentor_service.ex
 defmodule Services.MentorService do
   @moduledoc """
-  Servicio para gestión de mentores y retroalimentación
+  Servicio de aplicación para gestión de mentores
   """
 
   alias Domain.Mentor
-  alias Adapters.Persistence.RepoBehavior
+  alias Adapters.Persistence.ETSRepo
+  alias Services.{EquipoService, ProyectoService}
 
-  @doc """
-  Registra un nuevo mentor en el sistema
-  """
-  def register_mentor(repo, name, email, expertise) do
-    mentor = Mentor.registrar(name, email, String.split(expertise, ","))
-
-    mentor_data = %{
-      id: mentor.id,
-      nombre: mentor.nombre,
-      email: mentor.email,
-      especialidades: mentor.especialidades,
-      disponible: mentor.disponible,
-      consultas_pendientes: mentor.consultas_pendientes,
-      consultas_respondidas: mentor.consultas_respondidas,
-      feedback_dado: mentor.feedback_dado
-    }
-
-    RepoBehavior.save_mentor(repo, mentor_data)
-    {:ok, mentor_data}
+  @doc "Registra un nuevo mentor"
+  @spec registrar_mentor(String.t(), String.t(), list(String.t())) :: {:ok, Mentor.t()}
+  def registrar_mentor(nombre, email, especialidades) do
+    mentor = Mentor.nuevo(nombre, email, especialidades)
+    ETSRepo.guardar_mentor(mentor)
+    {:ok, mentor}
   end
 
-  @doc """
-  Lista todos los mentores registrados
-  """
-  def list_mentors(repo) do
-    RepoBehavior.list_mentors(repo)
+  @doc "Lista todos los mentores"
+  @spec listar_mentores() :: list(Mentor.t())
+  def listar_mentores do
+    ETSRepo.listar_mentores()
   end
 
-  @doc """
-  Registra una consulta de un equipo a un mentor
-  """
-  def register_consultation(repo, mentor_id, team_id, project_id, message) do
-    case RepoBehavior.get_mentor(repo, mentor_id) do
+  @doc "Lista solo mentores disponibles"
+  @spec listar_disponibles() :: list(Mentor.t())
+  def listar_disponibles do
+    ETSRepo.listar_mentores()
+    |> Enum.filter(& &1.disponible)
+  end
+
+  @doc "Obtiene un mentor por ID"
+  @spec obtener_mentor(String.t()) :: Mentor.t() | nil
+  def obtener_mentor(id) do
+    ETSRepo.obtener_mentor(id)
+  end
+
+  @doc "Registra una consulta de un equipo a un mentor"
+  @spec registrar_consulta(String.t(), String.t(), String.t()) :: {:ok, Mentor.t()} | {:error, atom()}
+  def registrar_consulta(mentor_id, nombre_equipo, mensaje) do
+    with %Mentor{} = mentor <- ETSRepo.obtener_mentor(mentor_id),
+         info_equipo when not is_nil(info_equipo) <- EquipoService.info_completa(nombre_equipo),
+         proyecto when not is_nil(proyecto) <- info_equipo.proyecto do
+
+      case Mentor.registrar_consulta(mentor, info_equipo.equipo.id, proyecto.id, mensaje) do
+        {:ok, mentor_actualizado} ->
+          ETSRepo.guardar_mentor(mentor_actualizado)
+          {:ok, mentor_actualizado}
+
+        error ->
+          error
+      end
+    else
+      nil -> {:error, :no_encontrado}
+      _ -> {:error, :datos_insuficientes}
+    end
+  end
+
+  @doc "Responde una consulta"
+  @spec responder_consulta(String.t(), String.t(), String.t()) :: {:ok, Mentor.t()} | {:error, atom()}
+  def responder_consulta(mentor_id, consulta_id, respuesta) do
+    case ETSRepo.obtener_mentor(mentor_id) do
       nil ->
-        {:error, "Mentor no encontrado"}
+        {:error, :mentor_no_encontrado}
 
-      mentor_data ->
-        mentor = struct(Mentor, mentor_data)
-
-        case Mentor.registrar_consulta(mentor, team_id, project_id, message) do
+      mentor ->
+        case Mentor.responder_consulta(mentor, consulta_id, respuesta) do
           {:ok, mentor_actualizado} ->
-            updated_mentor_data = %{
-              mentor_data |
-              consultas_pendientes: mentor_actualizado.consultas_pendientes
-            }
-            RepoBehavior.save_mentor(repo, updated_mentor_data)
-            {:ok, "Consulta registrada exitosamente"}
+            ETSRepo.guardar_mentor(mentor_actualizado)
+            {:ok, mentor_actualizado}
 
-          {:error, reason} ->
-            {:error, reason}
+          error ->
+            error
         end
     end
   end
 
-  @doc """
-  Responde a una consulta pendiente
-  """
-  def respond_consultation(repo, mentor_id, consultation_id, response) do
-    case RepoBehavior.get_mentor(repo, mentor_id) do
-      nil ->
-        {:error, "Mentor no encontrado"}
+  @doc "Agrega feedback a un proyecto"
+  @spec agregar_feedback(String.t(), String.t(), String.t(), integer() | nil) :: {:ok, Mentor.t()} | {:error, atom()}
+  def agregar_feedback(mentor_id, nombre_equipo, mensaje, calificacion \\ nil) do
+    with %Mentor{} = mentor <- ETSRepo.obtener_mentor(mentor_id),
+         proyecto when not is_nil(proyecto) <- ProyectoService.obtener_por_equipo(nombre_equipo) do
 
-      mentor_data ->
-        mentor = struct(Mentor, mentor_data)
-
-        case Mentor.responder_consulta(mentor, consultation_id, response) do
-          {:ok, mentor_actualizado} ->
-            updated_mentor_data = %{
-              mentor_data |
-              consultas_pendientes: mentor_actualizado.consultas_pendientes,
-              consultas_respondidas: mentor_actualizado.consultas_respondidas,
-              feedback_dado: mentor_actualizado.feedback_dado
-            }
-            RepoBehavior.save_mentor(repo, updated_mentor_data)
-            {:ok, "Consulta respondida exitosamente"}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+      mentor_actualizado = Mentor.agregar_feedback(mentor, proyecto.id, mensaje, calificacion)
+      ETSRepo.guardar_mentor(mentor_actualizado)
+      {:ok, mentor_actualizado}
+    else
+      nil -> {:error, :no_encontrado}
     end
   end
 
-  @doc """
-  Agrega feedback directo a un proyecto
-  """
-  def add_feedback(repo, mentor_id, project_id, message, suggestions \\ [], rating \\ nil) do
-    case RepoBehavior.get_mentor(repo, mentor_id) do
+  @doc "Obtiene consultas pendientes de un mentor"
+  @spec consultas_pendientes(String.t()) :: list(map()) | {:error, atom()}
+  def consultas_pendientes(mentor_id) do
+    case ETSRepo.obtener_mentor(mentor_id) do
       nil ->
-        {:error, "Mentor no encontrado"}
+        {:error, :mentor_no_encontrado}
 
-      mentor_data ->
-        mentor = struct(Mentor, mentor_data)
-
-        case Mentor.agregar_feedback(mentor, project_id, message, suggestions, rating) do
-          {:ok, mentor_actualizado} ->
-            updated_mentor_data = %{
-              mentor_data |
-              feedback_dado: mentor_actualizado.feedback_dado
-            }
-            RepoBehavior.save_mentor(repo, updated_mentor_data)
-            {:ok, "Feedback agregado exitosamente"}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+      mentor ->
+        Mentor.consultas_pendientes(mentor)
     end
   end
 
-  @doc """
-  Obtiene las consultas pendientes de un mentor
-  """
-  def get_pending_consultations(repo, mentor_id) do
-    case RepoBehavior.get_mentor(repo, mentor_id) do
-      nil -> {:error, "Mentor no encontrado"}
-      mentor_data ->
-        mentor = struct(Mentor, mentor_data)
-        {:ok, Mentor.obtener_consultas_pendientes(mentor)}
+  @doc "Obtiene feedback de un mentor para un proyecto"
+  @spec feedback_proyecto(String.t(), String.t()) :: list(map()) | {:error, atom()}
+  def feedback_proyecto(mentor_id, nombre_equipo) do
+    with %Mentor{} = mentor <- ETSRepo.obtener_mentor(mentor_id),
+         proyecto when not is_nil(proyecto) <- ProyectoService.obtener_por_equipo(nombre_equipo) do
+
+      Mentor.feedback_proyecto(mentor, proyecto.id)
+    else
+      nil -> {:error, :no_encontrado}
     end
   end
 
-  @doc """
-  Cambia la disponibilidad de un mentor
-  """
-  def set_availability(repo, mentor_id, available) do
-    case RepoBehavior.get_mentor(repo, mentor_id) do
+  @doc "Cambia la disponibilidad de un mentor"
+  @spec cambiar_disponibilidad(String.t(), boolean()) :: {:ok, Mentor.t()} | {:error, atom()}
+  def cambiar_disponibilidad(mentor_id, disponible) do
+    case ETSRepo.obtener_mentor(mentor_id) do
       nil ->
-        {:error, "Mentor no encontrado"}
+        {:error, :mentor_no_encontrado}
 
-      mentor_data ->
-        mentor = struct(Mentor, mentor_data)
-        mentor_actualizado = Mentor.cambiar_disponibilidad(mentor, available)
-
-        updated_mentor_data = %{mentor_data | disponible: mentor_actualizado.disponible}
-        RepoBehavior.save_mentor(repo, updated_mentor_data)
-
-        status = if available, do: "disponible", else: "no disponible"
-        {:ok, "Mentor marcado como #{status}"}
+      mentor ->
+        mentor_actualizado = Mentor.cambiar_disponibilidad(mentor, disponible)
+        ETSRepo.guardar_mentor(mentor_actualizado)
+        {:ok, mentor_actualizado}
     end
   end
 end
