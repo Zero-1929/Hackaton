@@ -340,7 +340,7 @@ elixir --version
 
 Proyecto desarrollado para el curso de Programación III
 
-**Institución**: [Tu Universidad]  
+**Institución**: Universidad del Quindio
 **Fecha**: Noviembre 2025  
 **Hackathon**: Code4Future 2025
 
