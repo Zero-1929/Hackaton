@@ -1,69 +1,105 @@
-defmodule Proyecto do
+# Domain/proyecto.ex
+defmodule Domain.Proyecto do
   @moduledoc """
-  Módulo para gestionar proyectos: creación, registro de ideas, avances y consultas.
+  Entidad de dominio: Proyecto de Hackathon
   """
 
-  defstruct [:id, :titulo, :descripcion, :categoria, :estado, :avances]
+  @enforce_keys [:id, :nombre, :descripcion, :categoria]
+  defstruct [
+    :id,
+    :nombre,
+    :descripcion,
+    :categoria,
+    equipo_id: nil,
+    estado: "nuevo",
+    avances: []
+  ]
 
-  # ==========
-  # CONSTRUCTORES
-  # ==========
+  @type avance :: %{
+    mensaje: String.t(),
+    fecha: DateTime.t()
+  }
 
-  def crear(id, titulo, descripcion, categoria, estado \\ "nuevo", avances \\ [])
-      when is_binary(id) and is_binary(titulo) and is_binary(descripcion) and is_binary(categoria) do
-    %Proyecto{
-      id: id,
-      titulo: titulo,
+  @type t :: %__MODULE__{
+    id: String.t(),
+    nombre: String.t(),
+    descripcion: String.t(),
+    categoria: String.t(),
+    equipo_id: String.t() | nil,
+    estado: String.t(),
+    avances: list(avance())
+  }
+
+  @estados_validos ["nuevo", "en_progreso", "finalizado", "cancelado"]
+
+  @doc "Crea un nuevo proyecto"
+  @spec nuevo(String.t(), String.t(), String.t(), String.t()) :: t()
+  def nuevo(nombre, descripcion, categoria, equipo_id) do
+    %__MODULE__{
+      id: generar_id(),
+      nombre: nombre,
       descripcion: descripcion,
       categoria: categoria,
-      estado: estado,
-      avances: avances
+      equipo_id: equipo_id,
+      estado: "nuevo",
+      avances: []
     }
   end
 
-  def subir_proyecto(id, titulo, descripcion, categoria),
-    do: crear(id, titulo, descripcion, categoria, "nuevo", [])
+  @doc "Actualiza el avance del proyecto"
+  @spec actualizar_avance(t(), String.t()) :: t()
+  def actualizar_avance(%__MODULE__{avances: avances} = proyecto, mensaje) do
+    nuevo_avance = %{
+      mensaje: mensaje,
+      fecha: DateTime.utc_now()
+    }
 
-  def registrar_idea(titulo, descripcion, categoria),
-    do: crear(generar_id(), titulo, descripcion, categoria, "nuevo", [])
+    nuevo_estado = if proyecto.estado == "nuevo", do: "en_progreso", else: proyecto.estado
 
-  # ==========
-  # ACTUALIZACIONES
-  # ==========
-
-  def actualizar_avance(%Proyecto{} = proyecto, mensaje) when is_binary(mensaje) do
-    avance = %{mensaje: mensaje, fecha: DateTime.utc_now()}
-    avances = normalizar_avances(proyecto.avances) ++ [avance]
-    nuevo_estado = if proyecto.estado in [nil, "nuevo"], do: "en_progreso", else: proyecto.estado
-    %{proyecto | avances: avances, estado: nuevo_estado}
+    %{proyecto |
+      avances: [nuevo_avance | avances],
+      estado: nuevo_estado
+    }
   end
 
-  def set_estado(%Proyecto{} = proyecto, estado)
-      when estado in ["nuevo", "en_progreso", "finalizado", "cancelado"] do
-    %{proyecto | estado: estado}
+  @doc "Cambia el estado del proyecto"
+  @spec cambiar_estado(t(), String.t()) :: {:ok, t()} | {:error, atom()}
+  def cambiar_estado(%__MODULE__{} = proyecto, nuevo_estado) do
+    if nuevo_estado in @estados_validos do
+      {:ok, %{proyecto | estado: nuevo_estado}}
+    else
+      {:error, :estado_invalido}
+    end
   end
 
-  # ==========
-  # CONSULTAS
-  # ==========
+  @doc "Obtiene el progreso del proyecto en porcentaje"
+  @spec calcular_progreso(t()) :: non_neg_integer()
+  def calcular_progreso(%__MODULE__{estado: estado, avances: avances}) do
+    case estado do
+      "nuevo" -> 0
+      "en_progreso" -> min(25 + length(avances) * 15, 90)
+      "finalizado" -> 100
+      "cancelado" -> 0
+      _ -> 0
+    end
+  end
 
-  def consultar_por_categoria(proyectos, categoria)
-      when is_list(proyectos) and is_binary(categoria),
-      do: Enum.filter(proyectos, &(&1.categoria == categoria))
+  @doc "Filtra proyectos por categoría"
+  @spec filtrar_por_categoria(list(t()), String.t()) :: list(t())
+  def filtrar_por_categoria(proyectos, categoria) do
+    Enum.filter(proyectos, &(&1.categoria == categoria))
+  end
 
-  def consultar_por_estado(proyectos, estado)
-      when is_list(proyectos) and is_binary(estado),
-      do: Enum.filter(proyectos, &(&1.estado == estado))
+  @doc "Filtra proyectos por estado"
+  @spec filtrar_por_estado(list(t()), String.t()) :: list(t())
+  def filtrar_por_estado(proyectos, estado) do
+    Enum.filter(proyectos, &(&1.estado == estado))
+  end
 
-  # ==========
-  # FUNCIONES PRIVADAS
-  # ==========
-
+  # Privadas
   defp generar_id do
-    uniq = :erlang.unique_integer([:positive, :monotonic])
-    "PR-" <> Integer.to_string(uniq)
+    timestamp = System.system_time(:millisecond)
+    random = :rand.uniform(9999)
+    "PRJ-#{timestamp}-#{random}"
   end
-
-  defp normalizar_avances(nil), do: []
-  defp normalizar_avances(avances) when is_list(avances), do: avances
 end

@@ -1,112 +1,141 @@
+# Services/chat_service.ex
 defmodule Services.ChatService do
   @moduledoc """
-  Servicio para gestión de chats en tiempo real
+  Servicio de aplicación para gestión de chat y mensajería
   """
 
-  alias Services.TeamService
-  alias Domain.Chat
-  alias Domain.Value_objects.{ID_equipo, ID_participante}
+  alias Domain.Mensaje
   alias Adapters.Persistence.ETSRepo
+  alias Services.EquipoService
 
-  @doc """
-  Abre el chat de un equipo
-  """
-  def open_chat(repo, team_name, user) do
-    case TeamService.get_team_by_name(repo, team_name) do
+  @doc "Envía un mensaje al chat de un equipo"
+  @spec enviar_mensaje_equipo(String.t(), String.t(), String.t()) :: {:ok, Mensaje.t()} | {:error, atom()}
+  def enviar_mensaje_equipo(nombre_equipo, remitente_id, contenido) do
+    case EquipoService.obtener_por_nombre(nombre_equipo) do
       nil ->
-        IO.puts("❌ No existe un equipo con ese nombre.\n")
-        {:error, :team_not_found}
+        {:error, :equipo_no_encontrado}
 
-      team ->
-        # Convertir IDs a value objects del Domain
-        equipo_id = %ID_equipo{valor: team.id}
-        participante_id = %ID_participante{valor: user.id}
+      equipo ->
+        mensaje = Mensaje.mensaje_equipo(remitente_id, contenido, equipo.id)
 
-        # Suscribir al participante al chat del equipo
-        Chat.suscribir_participante(participante_id, equipo_id, [])
-
-        # Obtener historial de mensajes
-        case Chat.obtener_historial(:equipo, equipo_id, 50) do
-          {:ok, mensajes} ->
-            IO.puts("💬 Chat del equipo #{team_name}:")
-            IO.puts("=================================")
-
-            if Enum.empty?(mensajes) do
-              IO.puts("No hay mensajes aún. ¡Sé el primero en escribir!")
-            else
-              Enum.each(mensajes, fn mensaje ->
-                remitente_data = ETSRepo.get_participant(mensaje.remitente_id.valor)
-                mensaje_formateado = Chat.formatear_mensaje(mensaje, remitente_data || %{nombre: "Usuario"})
-                IO.puts("[#{mensaje_formateado.fecha_hora}] #{mensaje_formateado.remitente}: #{mensaje_formateado.contenido}")
-              end)
-            end
-
-            IO.puts("=================================")
-            IO.puts("Escribe tu mensaje (o /exit para salir):")
-            enter_chat_mode(repo, equipo_id, participante_id, user)
-
-          {:error, reason} ->
-            IO.puts("❌ Error al cargar el historial: #{inspect(reason)}")
-            {:error, reason}
+        if Mensaje.valido?(mensaje) do
+          ETSRepo.guardar_mensaje(mensaje)
+          {:ok, mensaje}
+        else
+          {:error, :mensaje_invalido}
         end
     end
   end
 
-  defp enter_chat_mode(repo, equipo_id, participante_id, user) do
-    case IO.gets("> ") |> String.trim() do
-      "/exit" ->
-        IO.puts("Saliendo del chat...\n")
-        :ok
+  @doc "Envía un anuncio general"
+  @spec enviar_anuncio(String.t(), String.t()) :: {:ok, Mensaje.t()} | {:error, atom()}
+  def enviar_anuncio(remitente_id, contenido) do
+    mensaje = Mensaje.anuncio(remitente_id, contenido)
 
-      mensaje when byte_size(mensaje) > 0 ->
-        # Enviar mensaje usando el Domain
-        mensaje_id = Domain.Value_objects.ID_mensaje.generar()
+    if Mensaje.valido?(mensaje) do
+      ETSRepo.guardar_mensaje(mensaje)
+      {:ok, mensaje}
+    else
+      {:error, :mensaje_invalido}
+    end
+  end
 
-        case Chat.enviar_mensaje_equipo(mensaje_id, mensaje, participante_id, equipo_id) do
-          {:ok, _} ->
-            enter_chat_mode(repo, equipo_id, participante_id, user)
+  @doc "Envía un mensaje a una sala temática"
+  @spec enviar_mensaje_sala(String.t(), String.t(), String.t()) :: {:ok, Mensaje.t()} | {:error, atom()}
+  def enviar_mensaje_sala(sala_id, remitente_id, contenido) do
+    case ETSRepo.obtener_sala(sala_id) do
+      nil ->
+        {:error, :sala_no_encontrada}
 
-          {:error, reason} ->
-            IO.puts("❌ Error al enviar mensaje: #{inspect(reason)}")
-            enter_chat_mode(repo, equipo_id, participante_id, user)
+      _sala ->
+        mensaje = Mensaje.mensaje_sala(remitente_id, contenido, sala_id)
+
+        if Mensaje.valido?(mensaje) do
+          ETSRepo.guardar_mensaje(mensaje)
+          {:ok, mensaje}
+        else
+          {:error, :mensaje_invalido}
         end
-
-      _ ->
-        enter_chat_mode(repo, equipo_id, participante_id, user)
     end
   end
 
-  @doc """
-  Envía un anuncio general (solo para organizadores)
-  """
-  def send_announcement(_repo, user, content) do
-    participante_id = %ID_participante{valor: user.id}
-    mensaje_id = Domain.Value_objects.ID_mensaje.generar()
+  @doc "Envía un mensaje a un mentor"
+  @spec enviar_mensaje_mentor(String.t(), String.t(), String.t()) :: {:ok, Mensaje.t()} | {:error, atom()}
+  def enviar_mensaje_mentor(mentor_id, remitente_id, contenido) do
+    case ETSRepo.obtener_mentor(mentor_id) do
+      nil ->
+        {:error, :mentor_no_encontrado}
 
-    case Chat.enviar_anuncio(mensaje_id, content, participante_id) do
-      {:ok, _} ->
-        IO.puts("✅ Anuncio enviado a todos los participantes")
-        {:ok, :announcement_sent}
-      {:error, reason} ->
-        IO.puts("❌ Error al enviar anuncio: #{inspect(reason)}")
-        {:error, reason}
+      _mentor ->
+        mensaje = Mensaje.mensaje_mentor(remitente_id, contenido, mentor_id)
+
+        if Mensaje.valido?(mensaje) do
+          ETSRepo.guardar_mensaje(mensaje)
+          {:ok, mensaje}
+        else
+          {:error, :mensaje_invalido}
+        end
     end
   end
 
-  @doc """
-  Obtiene el historial de anuncios
-  """
-  def get_announcements(_repo, limit \\ 20) do
-    case Chat.obtener_historial(:anuncio, nil, limit) do
-      {:ok, mensajes} ->
-        mensajes_formateados = Enum.map(mensajes, fn mensaje ->
-          remitente_data = ETSRepo.get_participant(mensaje.remitente_id.valor)
-          Chat.formatear_mensaje(mensaje, remitente_data || %{nombre: "Organizador"})
-        end)
-        {:ok, mensajes_formateados}
+  @doc "Obtiene el historial de mensajes de un equipo"
+  @spec historial_equipo(String.t(), integer()) :: list(Mensaje.t())
+  def historial_equipo(nombre_equipo, limite \\ 50) do
+    case EquipoService.obtener_por_nombre(nombre_equipo) do
+      nil ->
+        []
 
-      {:error, reason} ->
-        {:error, reason}
+      equipo ->
+        ETSRepo.listar_mensajes(:equipo, equipo.id, limite)
+        |> Enum.reverse()
     end
+  end
+
+  @doc "Obtiene el historial de anuncios"
+  @spec historial_anuncios(integer()) :: list(Mensaje.t())
+  def historial_anuncios(limite \\ 20) do
+    ETSRepo.listar_mensajes(:anuncio, nil, limite)
+    |> Enum.reverse()
+  end
+
+  @doc "Obtiene el historial de una sala temática"
+  @spec historial_sala(String.t(), integer()) :: list(Mensaje.t())
+  def historial_sala(sala_id, limite \\ 50) do
+    ETSRepo.listar_mensajes(:sala_tematica, sala_id, limite)
+    |> Enum.reverse()
+  end
+
+  @doc "Obtiene mensajes con un mentor"
+  @spec historial_mentor(String.t(), integer()) :: list(Mensaje.t())
+  def historial_mentor(mentor_id, limite \\ 30) do
+    ETSRepo.listar_mensajes(:mentor, mentor_id, limite)
+    |> Enum.reverse()
+  end
+
+  @doc "Crea una sala temática"
+  @spec crear_sala(String.t(), String.t()) :: {:ok, map()}
+  def crear_sala(nombre, descripcion) do
+    sala = %{
+      id: generar_id_sala(),
+      nombre: nombre,
+      descripcion: descripcion,
+      fecha_creacion: DateTime.utc_now()
+    }
+
+    ETSRepo.guardar_sala(sala)
+    {:ok, sala}
+  end
+
+  @doc "Lista todas las salas temáticas"
+  @spec listar_salas() :: list(map())
+  def listar_salas do
+    ETSRepo.listar_salas()
+  end
+
+  # Privadas
+  defp generar_id_sala do
+    timestamp = System.system_time(:millisecond)
+    random = :rand.uniform(9999)
+    "SALA-#{timestamp}-#{random}"
   end
 end

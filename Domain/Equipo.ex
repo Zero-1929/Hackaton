@@ -1,72 +1,64 @@
+# Domain/equipo.ex
 defmodule Domain.Equipo do
   @moduledoc """
-  Módulo para gestionar equipos con sus miembros y estado activo.
+  Entidad de dominio: Equipo de la Hackathon
   """
 
-  defstruct [:id, :nombre, :tema, :miembros, :activo]
+  @enforce_keys [:id, :nombre, :categoria]
+  defstruct [:id, :nombre, :categoria, miembros: [], proyecto_id: nil, activo: true]
 
-  # ==========
-  # CONSTRUCTORES
-  # ==========
+  @type t :: %__MODULE__{
+    id: String.t(),
+    nombre: String.t(),
+    categoria: String.t(),
+    miembros: list(String.t()),
+    proyecto_id: String.t() | nil,
+    activo: boolean()
+  }
 
-  def crear(id, nombre, tema, miembros),
-    do: build_equipo(id, nombre, tema, miembros)
+  @doc "Crea un nuevo equipo"
+  @spec nuevo(String.t(), String.t()) :: t()
+  def nuevo(nombre, categoria) when is_binary(nombre) and is_binary(categoria) do
+    %__MODULE__{
+      id: generar_id(),
+      nombre: nombre,
+      categoria: categoria,
+      miembros: [],
+      proyecto_id: nil,
+      activo: true
+    }
+  end
 
-  def crear_por_tema(id, nombre, tema),
-    do: build_equipo(id, nombre, tema, [])
-
-  def crear_por_afinidad(id, nombre, tema, miembros) when is_list(miembros),
-    do: build_equipo(id, nombre, tema, normalizar_miembros(miembros))
-
-  # ==========
-  # ASIGNACIÓN DE PARTICIPANTES
-  # ==========
-
-  def asignar_participante(%Domain.Equipo{} = equipo, %Domain.Participante{id: pid} = participante),
-    do: agregar_miembro(equipo, participante, pid)
-
-  def asignar_participante(%Domain.Equipo{} = equipo, participante_id) when is_binary(participante_id),
-    do: agregar_miembro(equipo, participante_id, participante_id)
-
-  # ==========
-  # ESTADO ACTIVO / INACTIVO
-  # ==========
-
-  def activar(%Domain.Equipo{} = equipo), do: %{equipo | activo: true}
-  def desactivar(%Domain.Equipo{} = equipo), do: %{equipo | activo: false}
-
-  # ==========
-  # LISTAR EQUIPOS
-  # ==========
-
-  def listar_activos(equipos) when is_list(equipos),
-    do: Enum.filter(equipos, & &1.activo)
-
-  # ==========
-  # FUNCIONES PRIVADAS
-  # ==========
-
-  defp build_equipo(id, nombre, tema, miembros),
-    do: %Domain.Equipo{id: id, nombre: nombre, tema: tema, miembros: miembros, activo: true}
-
-  defp agregar_miembro(equipo, miembro, id) do
-    miembros = normalizar_miembros(equipo.miembros)
-
-    if miembro_existente?(miembros, id) do
-      equipo
+  @doc "Agrega un miembro al equipo"
+  @spec agregar_miembro(t(), String.t()) :: {:ok, t()} | {:error, atom()}
+  def agregar_miembro(%__MODULE__{miembros: miembros} = equipo, participante_id) do
+    if participante_id in miembros do
+      {:error, :ya_es_miembro}
     else
-      %{equipo | miembros: miembros ++ [miembro]}
+      {:ok, %{equipo | miembros: [participante_id | miembros]}}
     end
   end
 
-  defp normalizar_miembros(nil), do: []
-  defp normalizar_miembros(miembros) when is_list(miembros), do: miembros
+  @doc "Asigna un proyecto al equipo"
+  @spec asignar_proyecto(t(), String.t()) :: t()
+  def asignar_proyecto(%__MODULE__{} = equipo, proyecto_id) do
+    %{equipo | proyecto_id: proyecto_id}
+  end
 
-  defp miembro_existente?(miembros, id) do
-    Enum.any?(miembros, fn
-      %Domain.Participante{id: mid} -> mid == id
-      other when is_binary(other) -> other == id
-      _ -> false
-    end)
+  @doc "Activa o desactiva un equipo"
+  @spec cambiar_estado(t(), boolean()) :: t()
+  def cambiar_estado(%__MODULE__{} = equipo, activo) do
+    %{equipo | activo: activo}
+  end
+
+  @doc "Cuenta los miembros del equipo"
+  @spec contar_miembros(t()) :: non_neg_integer()
+  def contar_miembros(%__MODULE__{miembros: miembros}), do: length(miembros)
+
+  # Privadas
+  defp generar_id do
+    timestamp = System.system_time(:millisecond)
+    random = :rand.uniform(9999)
+    "TEAM-#{timestamp}-#{random}"
   end
 end

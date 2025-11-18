@@ -1,38 +1,46 @@
+# Domain/participante.ex
 defmodule Domain.Participante do
   @moduledoc """
-  Módulo para gestionar participantes.
-  Permite crear y registrar nuevos participantes con identificadores únicos.
+  Entidad de dominio: Participante de la Hackathon
   """
 
-  defstruct [:id, :nombre, :email]
+  @enforce_keys [:id, :nombre, :email]
+  defstruct [:id, :nombre, :email, equipo_id: nil]
 
-  # ==========
-  # CONSTRUCTORES
-  # ==========
+  @type t :: %__MODULE__{
+    id: String.t(),
+    nombre: String.t(),
+    email: String.t(),
+    equipo_id: String.t() | nil
+  }
 
-  @doc """
-  Crea un participante con un ID, nombre y correo dados explícitamente.
-  """
-  def crear(id, nombre, email)
-      when is_binary(id) and is_binary(nombre) and is_binary(email) do
-    %Domain.Participante{id: id, nombre: nombre, email: email}
+  @doc "Crea un nuevo participante con ID autogenerado"
+  @spec nuevo(String.t(), String.t()) :: t()
+  def nuevo(nombre, email) when is_binary(nombre) and is_binary(email) do
+    %__MODULE__{
+      id: generar_id(),
+      nombre: nombre,
+      email: email,
+      equipo_id: nil
+    }
   end
 
-  @doc """
-  Registra un nuevo participante generando automáticamente un ID único.
-  """
-  def registrar(nombre, email)
-      when is_binary(nombre) and is_binary(email) do
-    %Domain.Participante{id: generar_id(), nombre: nombre, email: email}
+  @doc "Asigna un participante a un equipo"
+  @spec asignar_equipo(t(), String.t()) :: t()
+  def asignar_equipo(%__MODULE__{} = participante, equipo_id) do
+    %{participante | equipo_id: equipo_id}
   end
 
-  # ==========
-  # FUNCIONES PRIVADAS
-  # ==========
+  @doc "Valida que un participante tenga datos correctos"
+  @spec valido?(t()) :: boolean()
+  def valido?(%__MODULE__{nombre: nombre, email: email}) do
+    String.trim(nombre) != "" and String.contains?(email, "@")
+  end
 
-  @doc false
+  # Privadas
   defp generar_id do
-    uniq = :erlang.unique_integer([:positive, :monotonic])
-    "P-" <> Integer.to_string(uniq)
+    timestamp = System.system_time(:millisecond)
+    random = :rand.uniform(9999)
+    "P-#{timestamp}-#{random}"
   end
 end
